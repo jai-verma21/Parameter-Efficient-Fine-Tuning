@@ -1,59 +1,69 @@
 # LLM Fine-Tuning for SQuAD (Llama-2-7B + QLoRA)
 
-**Status:** Plan + results snapshot. The code will be consolidated and cleaned later.  
-**Goal:** Efficiently fine-tune **Llama-2-7B** for extractive QA (SQuAD v1.1) under low-VRAM constraints using **QLoRA** (4-bit NF4 adapters), and benchmark accuracy, latency (p95), and memory footprint against lightweight and API baselines.
+**Status:** Plan + results snapshot. The notebook is a rough draft and will be cleaned later.
+
+**Goal:** Efficiently fine-tune **Llama-2-7B** for extractive QA (SQuAD v1.1) using **QLoRA** (4-bit NF4) under low-VRAM constraints, and benchmark accuracy (EM), latency (p95), and memory against lightweight and API baselines.
 
 ---
 
-## Why this project
-Large models are strong zero-shot but often underperform on extractive QA without task-specific adaptation. QLoRA enables practical fine-tuning on commodity GPUs by quantizing the base model to 4-bit and training small LoRA adapters.
+## Why
+Zero-/few-shot performance on extractive QA is often underwhelming. **QLoRA** allows adapting large models on commodity GPUs by quantizing the base weights to 4-bit and training small LoRA adapters.
 
 ---
 
 ## Task & Dataset
-- **Task:** Extractive question answering.
-- **Dataset:** **SQuAD v1.1** (train/dev) with standard **Exact Match (EM)** and **F1** evaluation.
-- **Success criteria:** Raise EM/F1 over the base Llama-2-7B and a TinyLlama baseline while keeping latency and VRAM near base levels.
+- **Task:** Extractive question answering  
+- **Dataset:** **SQuAD v1.1** (train/dev)  
+- **Metric:** **Exact Match (EM)**; same context window and deterministic decoding across models
 
 ---
 
-## Method (intended design)
-- **Base model:** Llama-2-7B.
-- **Adaptation:** **QLoRA** with **4-bit NF4** quantization, LoRA adapters on attention projections (common: q/k/v/o) with moderate rank and α; dropout for stability.
-- **Training regime:** supervised fine-tuning on SQuAD v1.1; early stopping on dev EM/F1.
-- **Evaluation:** EM/F1 on dev; **p95 latency** and **peak VRAM** for single-question inference.
-- **Benchmarks:** 
-  1) **TinyLlama-1B**,  
-  2) **raw Llama-2-7B** (no fine-tune),  
-  3) hosted **Llama-3.1-8B-instant** (API) for reference.
+## Intended Method (design, not code)
+- **Base:** Llama-2-7B
+- **Adaptation:** **QLoRA**, **4-bit NF4**, LoRA **rank=16, alpha=16**
+- **Targets:** attention + MLP projections; ~**0.2%** of weights trainable
+- **Seq length:** **512**
+- **Training:** supervised fine-tuning on SQuAD v1.1 with early stopping
+- **Eval:** EM on dev; **p95 latency** and **peak VRAM** for single-query inference
+- **Baselines:** TinyLlama-1B, raw Llama-2-7B, and a hosted Llama-3.1-8B-instant (API) reference
 
 ---
 
-## Results snapshot (from the initial run)
-- **Fine-tuned Llama-2-7B (QLoRA, 4-bit NF4)** on SQuAD v1.1 improved **EM from 51.3 → 70.3**, with roughly constant latency and memory (**~6 GB VRAM**).
-- Outperformed **TinyLlama-1B** by **+41 EM**, and landed **within 9 points** of the hosted **Llama-3.1-8B-instant** reference.
-- Achieved **~2× faster local inference** (**p95 ≈ 1.6 s** vs **~3.4 s** via API) with **VRAM comparable** to the base 7B.
+## Results Snapshot
 
-> Numbers will be re-validated and expanded with F1, confidence intervals, and ablations once the training/eval harness is finalized.
+- Built a **SQuAD v1.1 harness** with a fixed prompt and **deterministic decoding**; scored EM under the same window for every model.
+- **Fine-tuned Llama-2-7B (QLoRA, 4-bit NF4)** on Colab T4; adapters on attention+MLP; `rank=16`, `alpha=16`; **~0.2%** trainable params; **seq_len=512**.
+- **Fair comparison** across three local systems:
+
+  | Model                           | EM |
+  |---------------------------------|---:|
+  | TinyLlama-SQuAD (1B)            | **29.33** |
+  | Llama-2-7B (raw, no FT)         | **54.33** |
+  | Llama-2-7B **QLoRA** (this run) | **70.33** |
+
+- Hosted reference: **Llama-3.1-8B-instant (API)** at **EM 79.33**.
+- **Latency & Memory:** local QLoRA-7B was **~2× faster** to query (**p95 ≈ 1.6 s**) than the API (**~3.4 s p95**), with **~6 GB VRAM**—comparable to raw 7B.
+
+> Numbers are from an initial run; they’ll be re-validated with F1, seeds, and ablations once the training/eval harness is finalized.
 
 ---
 
-## Planned ablations
-- **LoRA rank/target modules** (qkv only vs qkvo).
-- **Quantization variants** (NF4 vs FP4) and adapter dropout.
-- **Context length and chunking** effects on long questions.
-- **Post-training tweaks** (calibration, answer length control).
+## Planned Ablations
+- LoRA **rank/targets** (qkv vs qkvo), adapter dropout
+- **NF4 vs FP4** quantization
+- Context length effects and chunking
+- Post-training calibration and answer-length control
 
 ---
 
 ## Limitations
-- Extractive QA only; no generative/narrative evaluation yet.
-- SQuAD is clean; robustness on noisy domains remains to be tested.
-- Results depend on hardware/load; latency comparisons will include methodology.
+- Focused on extractive QA; robustness on noisy domains not yet tested
+- SQuAD is clean and short-context; long-context behavior not evaluated
+- Latency depends on hardware and batch size; methodology will be published with the cleaned code
 
 ---
 
 ## Acknowledgments
-- Meta’s **Llama-2** model family.  
-- **SQuAD v1.1** dataset.  
-- Prior work on **QLoRA** and 4-bit quantization that enables affordable fine-tuning.
+- Meta **Llama-2** family  
+- **SQuAD v1.1** dataset  
+- QLoRA and 4-bit quantization research enabling affordable fine-tuning
